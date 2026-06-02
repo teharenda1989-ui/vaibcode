@@ -1,0 +1,694 @@
+<!-- public/index.html - Фронтенд приложение -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Video Generator | Создавай видео по тексту</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+
+        /* Навигация */
+        .navbar {
+            background: rgba(10, 10, 10, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 1rem 2rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+
+        .logo i {
+            background: none;
+            -webkit-background-clip: unset;
+            background-clip: unset;
+            color: #667eea;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .nav-link {
+            color: #fff;
+            text-decoration: none;
+            transition: color 0.3s;
+            cursor: pointer;
+        }
+
+        .nav-link:hover {
+            color: #667eea;
+        }
+
+        .crystal-badge {
+            background: linear-gradient(135deg, #f9ca24, #f0932b);
+            padding: 0.5rem 1rem;
+            border-radius: 50px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .crystal-badge i {
+            color: #ffd700;
+        }
+
+        .btn {
+            padding: 0.5rem 1.25rem;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+        }
+
+        .btn-outline:hover {
+            border-color: #667eea;
+            background: rgba(102, 126, 234, 0.1);
+        }
+
+        /* Основной контент */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        /* Форма генерации */
+        .generate-card {
+            background: rgba(255,255,255,0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 30px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .generate-card h2 {
+            margin-bottom: 1rem;
+        }
+
+        .prompt-input {
+            width: 100%;
+            padding: 1rem;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 15px;
+            color: white;
+            font-size: 1rem;
+            resize: vertical;
+            font-family: inherit;
+        }
+
+        .prompt-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .generate-btn {
+            margin-top: 1rem;
+            padding: 1rem 2rem;
+            font-size: 1.1rem;
+            width: 100%;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border: none;
+            border-radius: 15px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .generate-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Результат генерации */
+        .result-container {
+            background: rgba(255,255,255,0.05);
+            border-radius: 30px;
+            padding: 2rem;
+            margin-top: 2rem;
+            text-align: center;
+        }
+
+        .video-placeholder {
+            background: rgba(0,0,0,0.5);
+            border-radius: 20px;
+            padding: 3rem;
+            text-align: center;
+        }
+
+        /* Модальное окно */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            backdrop-filter: blur(10px);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: #1a1a2e;
+            border-radius: 30px;
+            padding: 2rem;
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+            border: 1px solid rgba(102, 126, 234, 0.3);
+        }
+
+        .modal-content input {
+            width: 100%;
+            padding: 0.75rem;
+            margin: 0.5rem 0;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 10px;
+            color: white;
+        }
+
+        .subscription-card {
+            background: linear-gradient(135deg, rgba(102,126,234,0.2), rgba(118,75,162,0.2));
+            padding: 1.5rem;
+            border-radius: 20px;
+            margin: 1rem 0;
+        }
+
+        /* История */
+        .history-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .history-item {
+            background: rgba(255,255,255,0.03);
+            border-radius: 15px;
+            padding: 1rem;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 50px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .status-processing { background: #f39c12; }
+        .status-completed { background: #27ae60; }
+        .status-failed { background: #e74c3c; }
+
+        /* Панели */
+        .page {
+            display: none;
+        }
+
+        .page.active {
+            display: block;
+        }
+
+        @media (max-width: 768px) {
+            .navbar {
+                flex-direction: column;
+                text-align: center;
+            }
+            .nav-links {
+                justify-content: center;
+            }
+            .container {
+                padding: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<nav class="navbar">
+    <div class="logo">
+        <i class="fas fa-film"></i> AI Video Generator
+    </div>
+    <div class="nav-links">
+        <a class="nav-link" onclick="showPage('generate')">🎬 Генерация</a>
+        <a class="nav-link" onclick="showPage('history')">📜 История</a>
+        <div id="authButtons">
+            <button class="btn btn-outline" onclick="showModal('loginModal')">Вход</button>
+            <button class="btn btn-primary" onclick="showModal('registerModal')">Регистрация</button>
+        </div>
+        <div id="userInfo" style="display: none;">
+            <span id="usernameDisplay"></span>
+            <div class="crystal-badge">
+                <i class="fas fa-gem"></i>
+                <span id="crystalsCount">0</span>
+                <button class="btn btn-outline" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;" onclick="showBuyCrystalsModal()">+</button>
+            </div>
+            <button class="btn btn-outline" onclick="logout()">Выйти</button>
+        </div>
+    </div>
+</nav>
+
+<div class="container">
+    <!-- Страница генерации -->
+    <div id="generatePage" class="page active">
+        <div class="generate-card">
+            <h2><i class="fas fa-magic"></i> Создай видео по описанию</h2>
+            <p style="color: rgba(255,255,255,0.6); margin-bottom: 1rem;">
+                Напишите, что должно происходить в видео. ИИ создаст уникальный ролик за 10-20 секунд.
+            </p>
+            <textarea id="promptInput" class="prompt-input" rows="4" placeholder="Пример: человек сочно откусывает красное яблоко, крупный план, 4K качество"></textarea>
+            <button class="generate-btn" id="generateBtn" onclick="generateVideo()">
+                <i class="fas fa-play"></i> Сгенерировать видео (-5 кристаллов)
+            </button>
+        </div>
+
+        <div id="generationResult" class="result-container" style="display: none;">
+            <h3>Результат генерации</h3>
+            <div id="videoContainer"></div>
+            <p id="generationStatus"></p>
+        </div>
+    </div>
+
+    <!-- Страница истории -->
+    <div id="historyPage" class="page">
+        <h2><i class="fas fa-history"></i> История генераций</h2>
+        <div id="historyList" class="history-list" style="margin-top: 1rem;">
+            <p style="text-align: center; color: rgba(255,255,255,0.5);">Загрузка...</p>
+        </div>
+    </div>
+</div>
+
+<!-- Модалка входа -->
+<div id="loginModal" class="modal">
+    <div class="modal-content">
+        <span style="float: right; cursor: pointer; font-size: 1.5rem;" onclick="closeModal('loginModal')">&times;</span>
+        <h2>Вход</h2>
+        <input type="email" id="loginEmail" placeholder="Email">
+        <input type="password" id="loginPassword" placeholder="Пароль">
+        <button class="btn btn-primary" onclick="login()" style="width: 100%; margin-top: 1rem;">Войти</button>
+        <p style="margin-top: 1rem;">Нет аккаунта? <a href="#" onclick="closeModal('loginModal'); showModal('registerModal')">Зарегистрироваться</a></p>
+    </div>
+</div>
+
+<!-- Модалка регистрации -->
+<div id="registerModal" class="modal">
+    <div class="modal-content">
+        <span style="float: right; cursor: pointer; font-size: 1.5rem;" onclick="closeModal('registerModal')">&times;</span>
+        <h2>Регистрация</h2>
+        <p style="color: rgba(255,255,255,0.5);">🎁 При регистрации вы получаете 1 кристалл бесплатно!</p>
+        <input type="text" id="regUsername" placeholder="Имя пользователя">
+        <input type="email" id="regEmail" placeholder="Email">
+        <input type="password" id="regPassword" placeholder="Пароль">
+        <button class="btn btn-primary" onclick="register()" style="width: 100%; margin-top: 1rem;">Зарегистрироваться</button>
+    </div>
+</div>
+
+<!-- Модалка подписки (попап при недостатке кристаллов) -->
+<div id="subscriptionPopup" class="modal">
+    <div class="modal-content">
+        <span style="float: right; cursor: pointer; font-size: 1.5rem;" onclick="closeModal('subscriptionPopup')">&times;</span>
+        <h2>🔥 Не хватает кристаллов!</h2>
+        <div class="subscription-card">
+            <i class="fas fa-crown" style="font-size: 3rem; color: #f1c40f;"></i>
+            <h3>Подписка PREMIUM</h3>
+            <p style="font-size: 2rem; font-weight: 800;">990 ₽<span style="font-size: 1rem;">/месяц</span></p>
+            <ul style="text-align: left; margin: 1rem 0;">
+                <li>✅ Безлимитные генерации видео</li>
+                <li>✅ +100 кристаллов бонусом</li>
+                <li>✅ Приоритетная обработка</li>
+                <li>✅ Увеличенная длина видео до 30 секунд</li>
+            </ul>
+            <button class="btn btn-primary" onclick="buySubscription()" style="width: 100%;">Оформить подписку</button>
+        </div>
+        <hr style="margin: 1rem 0; border-color: rgba(255,255,255,0.1);">
+        <p>Или купите кристаллы:</p>
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center;">
+            <button class="btn btn-outline" onclick="buyCrystals(5)">5 кристаллов - 100₽</button>
+            <button class="btn btn-outline" onclick="buyCrystals(20)">20 кристаллов - 350₽</button>
+            <button class="btn btn-outline" onclick="buyCrystals(50)">50 кристаллов - 790₽</button>
+            <button class="btn btn-outline" onclick="buyCrystals(100)">100 кристаллов - 1490₽</button>
+        </div>
+    </div>
+</div>
+
+<!-- Модалка покупки кристаллов -->
+<div id="buyCrystalsModal" class="modal">
+    <div class="modal-content">
+        <span style="float: right; cursor: pointer; font-size: 1.5rem;" onclick="closeModal('buyCrystalsModal')">&times;</span>
+        <h2>💎 Купить кристаллы</h2>
+        <p>1 генерация = 5 кристаллов</p>
+        <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1rem;">
+            <button class="btn btn-primary" onclick="buyCrystals(5)">5 кристаллов - 100₽</button>
+            <button class="btn btn-primary" onclick="buyCrystals(20)">20 кристаллов - 350₽</button>
+            <button class="btn btn-primary" onclick="buyCrystals(50)">50 кристаллов - 790₽</button>
+            <button class="btn btn-primary" onclick="buyCrystals(100)">100 кристаллов - 1490₽</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentUser = null;
+    let currentGenerations = [];
+
+    // API вызовы
+    async function apiCall(endpoint, method = 'GET', data = null) {
+        const options = {
+            method,
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        };
+        
+        if (data) {
+            options.body = JSON.stringify(data);
+        }
+        
+        const token = localStorage.getItem('token');
+        if (token) {
+            options.headers['Authorization'] = `Bearer ${token}`;
+        }
+        
+        const response = await fetch(endpoint, options);
+        const result = await response.json();
+        
+        if (!response.ok && response.status === 401) {
+            logout();
+            showToast('Сессия истекла, войдите снова');
+            return null;
+        }
+        
+        return { ok: response.ok, data: result, status: response.status };
+    }
+
+    async function register() {
+        const username = document.getElementById('regUsername').value;
+        const email = document.getElementById('regEmail').value;
+        const password = document.getElementById('regPassword').value;
+        
+        if (!username || !email || !password) {
+            showToast('Заполните все поля');
+            return;
+        }
+        
+        const { ok, data } = await apiCall('/api/register', 'POST', { username, email, password });
+        
+        if (ok) {
+            localStorage.setItem('token', data.token);
+            currentUser = data.user;
+            updateUI();
+            closeModal('registerModal');
+            showToast('Регистрация успешна! Вы получили 1 кристалл бесплатно! 🎉');
+            loadUserData();
+        } else {
+            showToast(data.error || 'Ошибка регистрации');
+        }
+    }
+    
+    async function login() {
+        const email = document.getElementById('loginEmail').value;
+        const password = document.getElementById('loginPassword').value;
+        
+        const { ok, data } = await apiCall('/api/login', 'POST', { email, password });
+        
+        if (ok) {
+            localStorage.setItem('token', data.token);
+            currentUser = data.user;
+            updateUI();
+            closeModal('loginModal');
+            showToast('Добро пожаловать!');
+            loadUserData();
+        } else {
+            showToast(data.error || 'Ошибка входа');
+        }
+    }
+    
+    function logout() {
+        localStorage.removeItem('token');
+        currentUser = null;
+        updateUI();
+        showToast('Вы вышли из аккаунта');
+        showPage('generate');
+    }
+    
+    function updateUI() {
+        const token = localStorage.getItem('token');
+        if (token) {
+            document.getElementById('authButtons').style.display = 'none';
+            document.getElementById('userInfo').style.display = 'flex';
+        } else {
+            document.getElementById('authButtons').style.display = 'flex';
+            document.getElementById('userInfo').style.display = 'none';
+        }
+    }
+    
+    async function loadUserData() {
+        if (!localStorage.getItem('token')) return;
+        
+        const { ok, data } = await apiCall('/api/user');
+        if (ok && data) {
+            document.getElementById('usernameDisplay').innerHTML = `<i class="fas fa-user"></i> ${data.username}`;
+            document.getElementById('crystalsCount').innerText = data.crystals;
+            currentUser = data;
+        }
+    }
+    
+    async function generateVideo() {
+        const prompt = document.getElementById('promptInput').value.trim();
+        if (!prompt) {
+            showToast('Введите описание видео');
+            return;
+        }
+        
+        const generateBtn = document.getElementById('generateBtn');
+        generateBtn.disabled = true;
+        generateBtn.innerHTML = '<i class="fas fa-spinner fa-pulse"></i> Запуск генерации...';
+        
+        const { ok, data, status } = await apiCall('/api/generate', 'POST', { prompt });
+        
+        if (ok) {
+            showToast('Генерация запущена! Ожидайте 10-20 секунд...');
+            document.getElementById('generationResult').style.display = 'block';
+            document.getElementById('videoContainer').innerHTML = `
+                <div class="video-placeholder">
+                    <i class="fas fa-spinner fa-pulse" style="font-size: 3rem;"></i>
+                    <p>Генерация видео: "${prompt.substring(0, 50)}..."</p>
+                    <p>Обычно занимает 10-20 секунд</p>
+                </div>
+            `;
+            document.getElementById('generationStatus').innerHTML = '⏳ Обработка...';
+            
+            // Проверяем статус каждые 3 секунды
+            const interval = setInterval(async () => {
+                const { ok: genOk, data: genData } = await apiCall(`/api/generation/${data.generationId}`);
+                if (genOk && genData.status === 'completed') {
+                    clearInterval(interval);
+                    document.getElementById('videoContainer').innerHTML = `
+                        <div style="background: linear-gradient(135deg, #27ae60, #2ecc71); border-radius: 20px; padding: 2rem;">
+                            <i class="fas fa-check-circle" style="font-size: 3rem;"></i>
+                            <p style="margin-top: 1rem;">✅ Видео готово!</p>
+                            <p style="font-size: 0.9rem;">Промпт: ${genData.prompt}</p>
+                            <div class="video-placeholder" style="margin-top: 1rem;">
+                                <i class="fas fa-video" style="font-size: 2rem;"></i>
+                                <p style="margin-top: 0.5rem;">🎬 Ссылка на видео: <a href="${genData.video_path}" style="color: #667eea;" target="_blank">Смотреть</a></p>
+                                <p style="font-size: 0.8rem; opacity: 0.7;">(В демо-версии это ссылка-заглушка. В боевой версии здесь будет настоящее видео)</p>
+                            </div>
+                        </div>
+                    `;
+                    document.getElementById('generationStatus').innerHTML = '✅ Генерация завершена!';
+                    loadUserData();
+                    loadHistory();
+                } else if (genOk && genData.status === 'failed') {
+                    clearInterval(interval);
+                    document.getElementById('videoContainer').innerHTML = '<p style="color: #e74c3c;">❌ Ошибка генерации. Попробуйте снова.</p>';
+                }
+            }, 3000);
+            
+        } else if (status === 402 && data.showSubscriptionPopup) {
+            showModal('subscriptionPopup');
+            showToast(data.error);
+        } else {
+            showToast(data.error || 'Ошибка генерации');
+        }
+        
+        generateBtn.disabled = false;
+        generateBtn.innerHTML = '<i class="fas fa-play"></i> Сгенерировать видео (-5 кристаллов)';
+        loadUserData();
+    }
+    
+    async function loadHistory() {
+        const { ok, data } = await apiCall('/api/generations');
+        if (ok) {
+            currentGenerations = data;
+            const historyDiv = document.getElementById('historyList');
+            if (data.length === 0) {
+                historyDiv.innerHTML = '<p style="text-align: center; color: rgba(255,255,255,0.5);">У вас пока нет генераций. Создайте первое видео!</p>';
+                return;
+            }
+            historyDiv.innerHTML = data.map(gen => `
+                <div class="history-item">
+                    <div style="display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: 0.5rem;">
+                        <div style="flex: 1;">
+                            <p><strong>📝 Запрос:</strong> ${gen.prompt.substring(0, 100)}${gen.prompt.length > 100 ? '...' : ''}</p>
+                            <p><small>📅 ${new Date(gen.created_at).toLocaleString('ru-RU')}</small></p>
+                        </div>
+                        <div>
+                            <span class="status-badge status-${gen.status}">${gen.status === 'processing' ? '⏳ Обработка' : gen.status === 'completed' ? '✅ Готово' : '❌ Ошибка'}</span>
+                            ${gen.status === 'completed' ? `<button class="btn btn-outline" style="margin-top: 0.5rem; padding: 0.25rem 0.75rem; font-size: 0.75rem;" onclick="alert('Видео: ${gen.video_path}')">▶️ Смотреть</button>` : ''}
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+    }
+    
+    async function buySubscription() {
+        const { ok, data } = await apiCall('/api/subscribe', 'POST');
+        if (ok) {
+            showToast('Подписка оформлена! Теперь генерации бесплатны на месяц!');
+            closeModal('subscriptionPopup');
+            loadUserData();
+        } else {
+            showToast('Ошибка оформления подписки');
+        }
+    }
+    
+    async function buyCrystals(amount) {
+        const { ok, data } = await apiCall('/api/buy-crystals', 'POST', { amount });
+        if (ok) {
+            showToast(`✅ ${amount} кристаллов добавлено!`);
+            closeModal('subscriptionPopup');
+            closeModal('buyCrystalsModal');
+            loadUserData();
+        } else {
+            showToast(data.error || 'Ошибка покупки');
+        }
+    }
+    
+    function showToast(message, isError = false) {
+        const toast = document.createElement('div');
+        toast.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: ${isError ? '#e74c3c' : '#27ae60'};
+            color: white;
+            padding: 1rem 2rem;
+            border-radius: 50px;
+            z-index: 2000;
+            animation: fadeOut 3s forwards;
+            font-weight: 500;
+        `;
+        toast.innerText = message;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+    }
+    
+    function showModal(id) {
+        document.getElementById(id).classList.add('active');
+    }
+    
+    function closeModal(id) {
+        document.getElementById(id).classList.remove('active');
+    }
+    
+    function showBuyCrystalsModal() {
+        showModal('buyCrystalsModal');
+    }
+    
+    function showPage(page) {
+        document.getElementById('generatePage').classList.remove('active');
+        document.getElementById('historyPage').classList.remove('active');
+        document.getElementById(`${page}Page`).classList.add('active');
+        if (page === 'history' && localStorage.getItem('token')) {
+            loadHistory();
+        }
+    }
+    
+    // Инициализация
+    updateUI();
+    if (localStorage.getItem('token')) {
+        loadUserData();
+        loadHistory();
+    }
+    
+    setInterval(() => {
+        if (localStorage.getItem('token')) {
+            loadUserData();
+        }
+    }, 30000);
+    
+    // Анимация для тостов
+    const style = document.createElement('style');
+    style.textContent = `
+        @keyframes fadeOut {
+            0% { opacity: 0; transform: translateX(-50%) translateY(20px); }
+            15% { opacity: 1; transform: translateX(-50%) translateY(0); }
+            85% { opacity: 1; transform: translateX(-50%) translateY(0); }
+            100% { opacity: 0; transform: translateX(-50%) translateY(20px); visibility: hidden; }
+        }
+    `;
+    document.head.appendChild(style);
+</script>
+</body>
+</html>
