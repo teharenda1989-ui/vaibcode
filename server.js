@@ -5,7 +5,6 @@ const { open } = require('sqlite');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
-const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 
 const app = express();
@@ -33,7 +32,10 @@ async function initDB() {
             crystals INTEGER DEFAULT 1,
             subscription_end TEXT,
             subscription_active INTEGER DEFAULT 0,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            referral_code TEXT UNIQUE,
+            invited_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (invited_by) REFERENCES users (id)
         )
     `);
 
@@ -42,8 +44,8 @@ async function initDB() {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
             prompt TEXT NOT NULL,
-            video_path TEXT,
-            status TEXT DEFAULT 'pending',
+            video_url TEXT,
+            status TEXT DEFAULT 'processing',
             crystals_spent INTEGER DEFAULT 5,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users (id)
@@ -59,6 +61,18 @@ async function initDB() {
             description TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+    `);
+
+    await db.exec(`
+        CREATE TABLE IF NOT EXISTS referrals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            referrer_id INTEGER NOT NULL,
+            referred_id INTEGER NOT NULL,
+            crystals_awarded INTEGER DEFAULT 15,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (referrer_id) REFERENCES users (id),
+            FOREIGN KEY (referred_id) REFERENCES users (id)
         )
     `);
 
@@ -79,8 +93,21 @@ function authMiddleware(req, res, next) {
     }
 }
 
+function generateReferralCode() {
+    return 'REF' + Math.random().toString(36).substring(2, 10).toUpperCase();
+}
+
+function generateKlingToken(accessKey, secretKey) {
+    const payload = {
+        iss: accessKey,
+        exp: Math.floor(Date.now() / 1000) + 1800,
+        nbf: Math.floor(Date.now() / 1000) - 5
+    };
+    return jwt.sign(payload, secretKey, { algorithm: 'HS256' });
+}
+
 app.post('/api/register', async (req, res) => {
-    const { username, email, password } = req.body;
+    const { username, email, password, referralCode } = req.body;
     
     if (!username || !email || !password) {
         return res.status(400).json({ error: 'Все поля обязательны' });
@@ -88,13 +115,35 @@ app.post('/api/register', async (req, res) => {
     
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
+        const newReferralCode = generateReferralCode();
+        
+        let invitedBy = null;
+        if (referralCode) {
+            const referrer = await db.get('SELECT id FROM users WHERE referral_code = ?', [referralCode]);
+            if (referrer) {
+                invitedBy = referrer.id;
+            }
+        }
         
         await db.run(
-            'INSERT INTO users (username, email, password, crystals) VALUES (?, ?, ?, 1)',
-            [username, email, hashedPassword]
+            'INSERT INTO users (username, email, password, crystals, referral_code, invited_by) VALUES (?, ?, ?, 1, ?, ?)',
+            [username, email, hashedPassword, newReferralCode, invitedBy]
         );
         
         const user = await db.get('SELECT id FROM users WHERE email = ?', [email]);
+        
+        if (invitedBy) {
+            await db.run('UPDATE users SET crystals = crystals + 15 WHERE id = ?', [invitedBy]);
+            await db.run(
+                'INSERT INTO transactions (user_id, amount, type, description) VALUES (?, 15, "referral", "Начисление за приглашение")',
+                [invitedBy]
+            );
+            await db.run(
+                'INSERT INTO referrals (referrer_id, referred_id, crystals_awarded) VALUES (?, ?, 15)',
+                [invitedBy, user.id]
+            );
+        }
+        
         await db.run(
             'INSERT INTO transactions (user_id, amount, type, description) VALUES (?, 1, "bonus", "Бесплатная генерация при регистрации")',
             [user.id]
@@ -105,7 +154,13 @@ app.post('/api/register', async (req, res) => {
         res.json({ 
             success: true, 
             token, 
-            user: { id: user.id, username, email, crystals: 1 }
+            user: { 
+                id: user.id, 
+                username, 
+                email, 
+                crystals: invitedBy ? 16 : 1,
+                referral_code: newReferralCode
+            }
         });
     } catch (error) {
         if (error.message.includes('UNIQUE')) {
@@ -143,7 +198,8 @@ app.post('/api/login', async (req, res) => {
                 email: user.email,
                 crystals: user.crystals,
                 subscription_active: user.subscription_active,
-                subscription_end: user.subscription_end
+                subscription_end: user.subscription_end,
+                referral_code: user.referral_code
             }
         });
     } catch (error) {
@@ -155,7 +211,7 @@ app.post('/api/login', async (req, res) => {
 app.get('/api/user', authMiddleware, async (req, res) => {
     try {
         const user = await db.get(
-            'SELECT id, username, email, crystals, subscription_active, subscription_end FROM users WHERE id = ?',
+            'SELECT id, username, email, crystals, subscription_active, subscription_end, referral_code FROM users WHERE id = ?',
             [req.userId]
         );
         
@@ -163,7 +219,12 @@ app.get('/api/user', authMiddleware, async (req, res) => {
             return res.status(404).json({ error: 'Пользователь не найден' });
         }
         
-        res.json(user);
+        const referrals = await db.get(
+            'SELECT COUNT(*) as count FROM referrals WHERE referrer_id = ?',
+            [req.userId]
+        );
+        
+        res.json({ ...user, invited_count: referrals?.count || 0 });
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Ошибка сервера' });
@@ -219,25 +280,94 @@ app.post('/api/generate', authMiddleware, async (req, res) => {
         
         const generationId = result.lastID;
         
-        setTimeout(async () => {
-            const videoId = uuidv4();
-            const videoUrl = `/videos/${videoId}.mp4`;
-            
-            await db.run(
-                'UPDATE generations SET status = ?, video_path = ? WHERE id = ?',
-                ['completed', videoUrl, generationId]
-            );
-            
-            console.log(`✅ Видео сгенерировано: ${generationId} - ${prompt}`);
-        }, 5000 + Math.random() * 10000);
-        
         res.json({
             success: true,
             generationId,
             status: 'processing',
-            message: 'Генерация видео запущена! Обычно это занимает 10-20 секунд.',
+            message: 'Генерация видео запущена! Обычно это занимает 1-3 минуты.',
             crystalsLeft: user.subscription_active === 1 ? user.crystals : user.crystals - cost
         });
+        
+        (async () => {
+            try {
+                const accessKey = process.env.KLING_ACCESS_KEY;
+                const secretKey = process.env.KLING_SECRET_KEY;
+                
+                if (!accessKey || !secretKey) {
+                    throw new Error('Kling API ключи не настроены');
+                }
+                
+                const token = generateKlingToken(accessKey, secretKey);
+                
+                console.log(`🎬 Запуск генерации через Kling AI: ${prompt}`);
+                
+                const createResponse = await fetch('https://api.klingai.com/v1/videos/text2video', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model_name: 'kling-v1-6',
+                        prompt: prompt,
+                        duration: '5',
+                        mode: 'std',
+                        aspect_ratio: '16:9'
+                    })
+                });
+                
+                const createData = await createResponse.json();
+                
+                if (createData.code !== 0) {
+                    throw new Error(`Kling API ошибка: ${createData.message}`);
+                }
+                
+                const taskId = createData.data.task_id;
+                
+                let videoUrl = null;
+                let attempts = 0;
+                const maxAttempts = 36;
+                
+                while (attempts < maxAttempts && !videoUrl) {
+                    await new Promise(resolve => setTimeout(resolve, 5000));
+                    
+                    const statusResponse = await fetch(`https://api.klingai.com/v1/videos/text2video/${taskId}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    
+                    const statusData = await statusResponse.json();
+                    
+                    if (statusData.code === 0) {
+                        const taskStatus = statusData.data.task_status;
+                        if (taskStatus === 'succeeded') {
+                            videoUrl = statusData.data.videos[0].url;
+                            break;
+                        } else if (taskStatus === 'failed') {
+                            throw new Error('Генерация не удалась');
+                        }
+                    }
+                    attempts++;
+                }
+                
+                if (!videoUrl) {
+                    throw new Error('Превышено время ожидания');
+                }
+                
+                console.log(`✅ Видео готово: ${videoUrl}`);
+                
+                await db.run(
+                    'UPDATE generations SET status = ?, video_url = ? WHERE id = ?',
+                    ['completed', videoUrl, generationId]
+                );
+                
+            } catch (error) {
+                console.error('❌ Ошибка:', error);
+                await db.run(
+                    'UPDATE generations SET status = ? WHERE id = ?',
+                    ['failed', generationId]
+                );
+            }
+        })();
         
     } catch (error) {
         console.error(error);
@@ -282,7 +412,7 @@ app.post('/api/subscribe', authMiddleware, async (req, res) => {
         
         res.json({ 
             success: true, 
-            message: 'Подписка оформлена! Теперь генерации бесплатны на месяц.',
+            message: 'Подписка оформлена!',
             subscription_end: endDate.toISOString()
         });
     } catch (error) {
@@ -294,15 +424,10 @@ app.post('/api/subscribe', authMiddleware, async (req, res) => {
 app.post('/api/buy-crystals', authMiddleware, async (req, res) => {
     const { amount } = req.body;
     
-    const packages = {
-        5: 100,
-        20: 350,
-        50: 790,
-        100: 1490
-    };
+    const packages = { 5: 100, 20: 350, 50: 790, 100: 1490 };
     
     if (!packages[amount]) {
-        return res.status(400).json({ error: 'Неверное количество кристаллов' });
+        return res.status(400).json({ error: 'Неверное количество' });
     }
     
     try {
@@ -314,18 +439,13 @@ app.post('/api/buy-crystals', authMiddleware, async (req, res) => {
         
         const user = await db.get('SELECT crystals FROM users WHERE id = ?', [req.userId]);
         
-        res.json({ 
-            success: true, 
-            crystals: user.crystals,
-            message: `${amount} кристаллов добавлено на ваш счёт!`
-        });
+        res.json({ success: true, crystals: user.crystals });
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Ошибка сервера' });
     }
 });
 
-// ============= ЗАПУСК СЕРВЕРА =============
 async function start() {
     await initDB();
     app.listen(PORT, '0.0.0.0', () => {
